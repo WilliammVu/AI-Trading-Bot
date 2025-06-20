@@ -15,6 +15,7 @@ newsAPI_key  = 'undisclosed'
 from openai import OpenAI
 import eventregistry as NewsAPI
 import json
+import time
 
 # Find articles and social media posts
 
@@ -70,12 +71,11 @@ class Data:
 
         IMPORTANT: Output a valid JSON string ONLY
         """
-        i = 1
-        for article in self.articles:
-            prompt += f'ARTICLE {i}:\n\n'
-            prompt += article
+
+        for i in range(len(self.articles)):
+            prompt += f'ARTICLE {i+1}:\n\n'
+            prompt += self.articles[i]
             prompt += '\n\n'
-            i += 1
 
         client = OpenAI(api_key = openai_key)
 
@@ -93,18 +93,38 @@ class Data:
     
     def analyze(self) -> dict[str,str]:
         # This is the only publicly used function
+
+        print('Getting sources...')
+        start = time.time()
         self._get_sources()
+        end = time.time()
+        print(f'Finished getting sources ({end - start:.2f} s)')
+
+        print('Condensing sources...')
+        print('This process may take a couple minutes')
+        start = time.time()
         self._condense_text()
-        return self._analyze()
+        end = time.time()
+        print(f'Finished condensing sources ({end - start:.2f} s)')
+
+        print('Analyzing sources...')
+        start = time.time()
+        analysis = self._analyze()
+        end = time.time()
+        print(f'Finished analyzing sources ({end - start:.2f} s)\n\n')
+
+        analysis_dict = json.loads(analysis)
+        return analysis_dict
 
 
 if __name__ == '__main__':
+    print('to exit instead, enter \'exit\'')
     stock = input('Enter the stock for human sentiment analysis: ')
+    if(stock != 'exit'):
+        d1 = Data(stock)
+        analysis_dict = d1.analyze()
 
-    d1 = Data(stock)
-    analysis = d1.analyze()
-    analysis_dict = json.loads(analysis)
-
-    print(f'Analysis:\n\n{analysis_dict["analysis"]}\n\n')
-    print(f'Sentiment:\n\n{analysis_dict["sentiment"]}\n\n')
-    print(f'Rating:\n\n{analysis_dict["rating"]}')
+        print(f'Analysis:\n\n{analysis_dict["analysis"]}\n\n')
+        print(f'Sentiment:\n\n{analysis_dict["sentiment"]}\n\n')
+        print(f'Rating:\n\n{analysis_dict["rating"]}')
+    print('\n\nFinished!')
