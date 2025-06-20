@@ -62,12 +62,14 @@ class Data:
             self.articles[i] = response.choices[0].message.content
 
     def _analyze(self) -> str:
-        prompt = f'The following is a collection of {self.num_of_articles} recent articles regarding {self.stock}.'
-        prompt += '\nBased on the articles, output the following valid json with fields: analysis, sentiment, rating.'
-        prompt += '\nThe analysis json field should be a one paragraph summary of the key ideas of the articles.'
-        prompt += '\nThe sentiment json field should strictly be "POSITIVE", "NEGATIVE", or "NEUTRAL".'
-        prompt += '\nThe rating json field should stricly be "BUY", "HOLD", or "SELL".\n\n'
-        prompt += 'IMPORTANT: Output a valid json string ONLY\n\n'
+        prompt = f"""The following is a collection of {self.num_of_articles} recent articles regarding {self.stock}.
+        Based on the articles, output the following valid JSON with fields: analysis, sentiment, rating.
+        The analysis JSON field should be a one-paragraph summary of the key ideas of the articles.
+        The sentiment JSON field should strictly be "POSITIVE", "NEGATIVE", or "NEUTRAL".
+        The rating JSON field should strictly be "BUY", "HOLD", or "SELL".
+
+        IMPORTANT: Output a valid JSON string ONLY
+        """
         i = 1
         for article in self.articles:
             prompt += f'ARTICLE {i}:\n\n'
