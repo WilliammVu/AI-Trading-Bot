@@ -21,7 +21,7 @@ import time
 
 class Data:
 
-    def __init__(self, stock: str, num_of_articles: int = 20):
+    def __init__(self, *, stock_name: str, num_of_articles: int = 20):
         # the current stock of interest
         self.stock = stock
         # article data to be passed to OpenAI
@@ -121,7 +121,7 @@ if __name__ == '__main__':
     print('to exit instead, enter \'exit\'')
     stock = input('Enter the stock for human sentiment analysis: ')
     if(stock != 'exit'):
-        d1 = Data(stock)
+        d1 = Data(stock_name = stock)
         analysis_dict = d1.analyze()
 
         print(f'Analysis:\n\n{analysis_dict["analysis"]}\n\n')
