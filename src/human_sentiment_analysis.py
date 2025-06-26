@@ -23,10 +23,10 @@ class Data:
 
     def __init__(self, *, stock_name: str, num_of_articles: int = 20):
         # the current stock of interest
-        self.stock = stock
+        self.stock = stock_name
         # article data to be passed to OpenAI
         self.articles:list[str] = []
-        # number of articles to be extracte from NewsAPI, 20 by default
+        # number of articles to be extracted from NewsAPI, 20 by default
         self.num_of_articles = num_of_articles
         
     def _get_sources(self):
