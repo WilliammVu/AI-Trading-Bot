@@ -2,82 +2,200 @@
 # GNU AFFERO GENERAL PUBLIC LICENSE
 # 2025
 
-# AI Trading Bot: Human Sentiment Analysis Function
+# AI Trading Bot: Human Sentiment Analysis module
 
 # Objective:
 # Analyze the sentiment surrounding a particular stock
-# of the user's choosing
-
-openai_key   = 'undisclosed'
-deepseek_key = 'undisclosed'
-newsAPI_key  = 'undisclosed'
+# of the user's choosing using EventRegistry and OpenAI.
 
 from openai import OpenAI
 import eventregistry as NewsAPI
-import json
-import time
+import json, time, sys, datetime
 
-# Find articles and social media posts
+# Subclass for SentimentAnalysis
+class Article:
 
-class Data:
+    def __init__(self, *, body, date):
+        self.body = body
+        self.date = date
 
-    def __init__(self, *, stock_name: str, num_of_articles: int = 20):
-        # the current stock of interest
-        self.stock = stock_name
-        # article data to be passed to OpenAI
-        self.articles:list[str] = []
-        # number of articles to be extracted from NewsAPI, 20 by default
-        self.num_of_articles = num_of_articles
-        
+class SentimentAnalysis:
+
+    def __init__(self, *, stock_name:str = None, num_of_articles:int = 20, openai_key, newsapi_key):
+        # The current stock of interest
+        if type(stock_name) != str and stock_name != None:
+            sys.stderr.write('SentimentAnalysis.__init__() Error: stock_name should be str or ignored')
+            sys.exit(1)
+        self.stock_name:str = stock_name
+
+        #keywords regarding the stock used for searching articles
+        self.keywords:list[str] = []
+
+        # Article data to be passed to OpenAI
+        self.articles:list[Article] = []
+
+        # Number of articles to be extracted from NewsAPI, 20 by default
+        if num_of_articles < 5:
+            num_of_articles = 5
+        if num_of_articles > 100:
+            num_of_articles = 100
+        self.num_of_articles:int = num_of_articles
+
+        # API keys
+        self.openai_key:str = openai_key
+        self.newsapi_key:str = newsapi_key
+
+    def _get_keywords(self):
+        # Use OpenAI to get keywords that will be used in _get_sources
+
+        try:
+            client = OpenAI(api_key = self.openai_key)
+
+            prompt = f"""You will receive a <company word>. 
+            You must convert that word into a valid json string with the following fields: name, long_name, ticker_symbol.
+
+            The following are examples to guide your operations:
+            Ex. 1: <company word> = Tesla -> name:Tesla, long_name: Tesla Inc, ticker_symbol:TSLA
+            Ex. 2: <company word> = TSLA -> name:Tesla, long_name: Tesla Inc, ticker_symbol:TSLA
+            Ex. 3: <company word> = NVIDIA -> name:NVIDIA, long_name:NVIDIA Corp, ticker_symbol:NVDA
+
+            If you do not know the answer to any of these fields, leave them as NONE. for example: long_name:NONE
+
+            The <company word> is: {self.stock_name}. Please output valid JSON based on the above directions.
+
+            """
+
+            keywords_json_str = client.chat.completions.create(
+                    model="gpt-4.1",
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                ).choices[0].message.content
+            
+            keywords_dict = json.loads(keywords_json_str)
+
+            if keywords_dict['name'] != 'NONE':
+                self.keywords.append(keywords_dict['name'])
+            else:
+                print('name not found')
+            if keywords_dict['long_name'] != 'NONE':
+                self.keywords.append(keywords_dict['long_name'])
+            else:
+                print('long name not found')
+            if keywords_dict['ticker_symbol'] != 'NONE':
+                self.keywords.append(keywords_dict['ticker_symbol'])
+            else:
+                print('ticker symbol not found')
+            
+            if len(self.keywords) == 0:
+                print(f'Unable to find keywords. Will use {self.stock_name} for searches instead')
+                self.keywords.append(self.stock_name)
+
+        except Exception as e:
+            print(f'SentimentAnalysis._get_keywords() failed getting keywords for article searching. \'{self.stock_name}\' used as only keyword')
+
     def _get_sources(self):
-        er = NewsAPI.EventRegistry(newsAPI_key, allowUseOfArchive = False)
+        # If n == self.num_of_articles, 
+        # this function adds n stringified articles to self.articles
+
+        er = NewsAPI.EventRegistry(self.newsapi_key, allowUseOfArchive = False)
 
         q = NewsAPI.QueryArticlesIter(
-            keywords = self.stock,
-            sourceLocationUri = NewsAPI.QueryItems.OR([
-                "http://en.wikipedia.org/wiki/United_Kingdom",
-                "http://en.wikipedia.org/wiki/United_States",
-                "http://en.wikipedia.org/wiki/Canada"]),
-            ignoreSourceGroupUri="paywall/paywalled_sources",
-            dataType= ["news", "pr"]
+            keywords = NewsAPI.QueryItems.OR(self.keywords),
+            sourceGroupUri = er.getSourceGroupUri('business top 100'),
+            lang = 'eng'
         )
 
         # 20 query results
-        for article in q.execQuery(er, sortBy="date", sortByAsc=False, maxItems=self.num_of_articles):
-            self.articles.append(article['body'])
+        for article in q.execQuery(er, sortBy='rel', sortByAsc=False, maxItems=self.num_of_articles):
+            a = Article(body = article['body'], date = article['date'])
+            self.articles.append(a)
+
+        
 
     def _condense_text(self):
-        # We use Deepseek as a cheap option
-        # to shorten the articles and posts into 2-3 sentence summaries
-        client = OpenAI(api_key = deepseek_key, base_url = 'https://api.deepseek.com')
+        # Function: summarize each article in self.articles
 
-        for i in range(len(self.articles)):
-            response = client.chat.completions.create(
-                        model    = 'deepseek-chat',
-                        messages =
-                        [
-                            {'role': 'system', 'content': 'You are a helpful assistant that summarizes articles in 2-3 sentences.'},
-                            {"role": 'user', 'content': f'Summarize this article in 2-3 sentences, and do not output anything besides the summary:\n\n{self.articles[i]}'}
-                        ]
-                      )
-            self.articles[i] = response.choices[0].message.content
+        # Check if len(self.articles) is divisible by 5 and not 0
+        while len(self.articles) % 5 != 0:
+            self.articles.pop()
+
+        self.num_of_articles = len(self.articles)
+
+        if len(self.articles) == 0:
+            sys.stderr.write('Data Object Error: call _get_sources() before calling _condense_text() or make sure that num_of_articles >= 5')
+            sys.exit(1)
+
+        # Shorten the articles into 3 sentence summaries
+        client = OpenAI(api_key = self.openai_key)
+
+        instructions = f"""The following is a collection of 5 articles regarding {self.stock_name}.
+        Summarize each article in about 3 sentences.
+        You should output a valid JSON string with the fields: one, two, three, four, five.
+        The one JSON field should be the ~3 sentence summary of the first article.
+        The two JSON field should be the ~3 sentence summary of the second article.
+        The three JSON field should be the ~3 sentence summary of the third article.
+        The four JSON field should be the ~3 sentence summary of the fourth article.
+        The five JSON field should be the ~3 sentence summary of the fifth article.
+
+        DO NOT OUTPUT ANYTHING BESIDES THE VALID JSON STRING
+
+        """
+        start = time.time()
+
+        for i in range(self.num_of_articles // 5):
+            #if this process took too long, exit
+            end = time.time()
+            if end - start > 200.0:
+                sys.stderr.write('Could not condense articles. Terminating processes')
+                sys.exit(1)
+
+            prompt = instructions
+
+            for j in range(5):
+                prompt += f'\nARTICLE {j}:\n\n'
+                prompt += self.articles[(i * 5) + j].body
+
+            summaries = client.chat.completions.create(
+                model="gpt-4.1",
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system",
+                    "content": "You are acting as a tool that summarizes articles in ~3 sentences"},
+                    {"role": "user", "content": prompt}
+                ]
+            ).choices[0].message.content
+
+            summaries_dict = json.loads(summaries)
+            self.articles[(i * 5) + 0].body = summaries_dict['one']
+            self.articles[(i * 5) + 1].body = summaries_dict['two']
+            self.articles[(i * 5) + 2].body = summaries_dict['three']
+            self.articles[(i * 5) + 3].body = summaries_dict['four']
+            self.articles[(i * 5) + 4].body = summaries_dict['five']
+        
+            
+            
 
     def _analyze(self) -> str:
-        prompt = f"""The following is a collection of {self.num_of_articles} recent articles regarding {self.stock}.
+        prompt = f"""The following is a collection of {self.num_of_articles} summaries of recent articles regarding {self.stock_name}.
+        Note that some of the articles might be irrelevant.
+        Note that today's date is {datetime.date.today()}, so articles closest to this date are the most important to consider.
         Based on the articles, output the following valid JSON with fields: analysis, sentiment, rating.
         The analysis JSON field should be a one-paragraph summary of the key ideas of the articles.
         The sentiment JSON field should strictly be "POSITIVE", "NEGATIVE", or "NEUTRAL".
         The rating JSON field should strictly be "BUY", "HOLD", or "SELL".
 
         IMPORTANT: Output a valid JSON string ONLY
+
         """
 
         for i in range(len(self.articles)):
-            prompt += f'ARTICLE {i+1}:\n\n'
-            prompt += self.articles[i]
+            prompt += f'ARTICLE {i+1} ({self.articles[i].date}):\n\n'
+            prompt += self.articles[i].body
             prompt += '\n\n'
 
-        client = OpenAI(api_key = openai_key)
+        client = OpenAI(api_key = self.openai_key)
 
         analysis = client.chat.completions.create(
             model="gpt-4.1",
@@ -91,8 +209,28 @@ class Data:
 
         return analysis
     
-    def analyze(self) -> dict[str,str]:
+    def analyze(self, stock:str = None) -> dict[str,str]:
         # This is the only publicly used function
+        # It returns a [str,str] dict with the following keys:
+        # 'analysis', 'sentiment', 'rating'
+        # read self._analyze() for more info
+
+        # Note that the constructor defaults self.stock_name to None
+        # So if self.stock_name and stock--the argument passed to this function--are both None,
+        # Then the program should exit
+
+        if stock == None and self.stock_name == None:
+            sys.stderr.write('SentimentAnalysis.analyze() Error: stock name is None')
+        elif stock == None:
+            pass
+        else:
+            self.stock_name = stock
+            
+        print('Getting keywords for article search...')
+        start = time.time()
+        self._get_keywords()
+        end = time.time()
+        print(f'Finished getting keywords ({end - start:.2f} s)')
 
         print('Getting sources...')
         start = time.time()
@@ -101,7 +239,7 @@ class Data:
         print(f'Finished getting sources ({end - start:.2f} s)')
 
         print('Condensing sources...')
-        print('This process may take a couple minutes')
+        print('This process may take a while')
         start = time.time()
         self._condense_text()
         end = time.time()
@@ -116,15 +254,5 @@ class Data:
         analysis_dict = json.loads(analysis)
         return analysis_dict
 
-
 if __name__ == '__main__':
-    print('to exit instead, enter \'exit\'')
-    stock = input('Enter the stock for human sentiment analysis: ')
-    if(stock != 'exit'):
-        d1 = Data(stock_name = stock)
-        analysis_dict = d1.analyze()
-
-        print(f'Analysis:\n\n{analysis_dict["analysis"]}\n\n')
-        print(f'Sentiment:\n\n{analysis_dict["sentiment"]}\n\n')
-        print(f'Rating:\n\n{analysis_dict["rating"]}')
-    print('\n\nFinished!')
+    pass
