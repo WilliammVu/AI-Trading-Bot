@@ -3,10 +3,16 @@
 
 # This file explains how the human sentiment analysis Python library works (AI-Trading-Bot/src/human_sentiment_analysis.py)
 
+# Overview:
+# - Analyzes the sentiment surrounding a stock by:
+#   - Finding relevant articles about the stock
+#   - Uses AI to analyze the sentiment using those articles
+
 from human_sentiment_analysis import SentimentAnalysis
 
 data = SentimentAnalysis(openai_key = openai_key, newsapi_key = newsAPI_key)
-
+# By default, the number of articles searched is 20 here.
+# 20 is recommended, as the process takes ~2 minutes with 20 articles
 analysis_dict = data.analyze('Tesla')
 
 print('ANALYSIS:\n', analysis_dict['analysis'], '\n')
