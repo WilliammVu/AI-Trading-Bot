@@ -21,12 +21,9 @@ class Article:
 
 class SentimentAnalysis:
 
-    def __init__(self, *, stock_name:str = None, num_of_articles:int = 20, openai_key, newsapi_key):
+    def __init__(self, *, num_of_articles:int = 20, openai_key, newsapi_key):
         # The current stock of interest
-        if type(stock_name) != str and stock_name != None:
-            sys.stderr.write('SentimentAnalysis.__init__() Error: stock_name should be str or ignored')
-            sys.exit(1)
-        self.stock_name:str = stock_name
+        self.stock_name:str = None
 
         #keywords regarding the stock used for searching articles
         self.keywords:list[str] = []
@@ -35,10 +32,6 @@ class SentimentAnalysis:
         self.articles:list[Article] = []
 
         # Number of articles to be extracted from NewsAPI, 20 by default
-        if num_of_articles < 5:
-            num_of_articles = 5
-        if num_of_articles > 100:
-            num_of_articles = 100
         self.num_of_articles:int = num_of_articles
 
         # API keys
@@ -93,7 +86,7 @@ class SentimentAnalysis:
                 self.keywords.append(self.stock_name)
 
         except Exception as e:
-            print(f'SentimentAnalysis._get_keywords() failed getting keywords for article searching. \'{self.stock_name}\' used as only keyword')
+            print(f'SentimentAnalysis._get_keywords() OpenAI API call failed. \'{self.stock_name}\' used as only keyword')
 
     def _get_sources(self):
         # If n == self.num_of_articles, 
@@ -110,22 +103,10 @@ class SentimentAnalysis:
         # 20 query results
         for article in q.execQuery(er, sortBy='rel', sortByAsc=False, maxItems=self.num_of_articles):
             a = Article(body = article['body'], date = article['date'])
-            self.articles.append(a)
-
-        
+            self.articles.append(a)   
 
     def _condense_text(self):
         # Function: summarize each article in self.articles
-
-        # Check if len(self.articles) is divisible by 5 and not 0
-        while len(self.articles) % 5 != 0:
-            self.articles.pop()
-
-        self.num_of_articles = len(self.articles)
-
-        if len(self.articles) == 0:
-            sys.stderr.write('Data Object Error: call _get_sources() before calling _condense_text() or make sure that num_of_articles >= 5')
-            sys.exit(1)
 
         # Shorten the articles into 3 sentence summaries
         client = OpenAI(api_key = self.openai_key)
@@ -147,7 +128,7 @@ class SentimentAnalysis:
         for i in range(self.num_of_articles // 5):
             #if this process took too long, exit
             end = time.time()
-            if end - start > 200.0:
+            if end - start > 3600.0:
                 sys.stderr.write('Could not condense articles. Terminating processes')
                 sys.exit(1)
 
@@ -173,20 +154,19 @@ class SentimentAnalysis:
             self.articles[(i * 5) + 2].body = summaries_dict['three']
             self.articles[(i * 5) + 3].body = summaries_dict['four']
             self.articles[(i * 5) + 4].body = summaries_dict['five']
-        
-            
-            
 
     def _analyze(self) -> str:
         prompt = f"""The following is a collection of {self.num_of_articles} summaries of recent articles regarding {self.stock_name}.
         Note that some of the articles might be irrelevant.
         Note that today's date is {datetime.date.today()}, so articles closest to this date are the most important to consider.
         Based on the articles, output the following valid JSON with fields: analysis, sentiment, rating.
-        The analysis JSON field should be a one-paragraph summary of the key ideas of the articles.
+        The analysis JSON field should be a one-paragraph summary of the key ideas of all the articles.
         The sentiment JSON field should strictly be "POSITIVE", "NEGATIVE", or "NEUTRAL".
         The rating JSON field should strictly be "BUY", "HOLD", or "SELL".
 
-        IMPORTANT: Output a valid JSON string ONLY
+        Important Notes: 
+        Output a valid JSON string ONLY
+        You are analyzing every single article at once and producing one analysis, sentiment, rating JSON object
 
         """
 
@@ -209,23 +189,35 @@ class SentimentAnalysis:
 
         return analysis
     
-    def analyze(self, stock:str = None) -> dict[str,str]:
-        # This is the only publicly used function
-        # It returns a [str,str] dict with the following keys:
+    def _reset(self):
+        stock_name = None
+        self.keywords = []
+        self.articles = []
+    
+    def analyze(self, stock_name) -> dict[str,str]:
+        # Returns a [str,str] dict with the following keys:
         # 'analysis', 'sentiment', 'rating'
         # read self._analyze() for more info
 
-        # Note that the constructor defaults self.stock_name to None
-        # So if self.stock_name and stock--the argument passed to this function--are both None,
-        # Then the program should exit
-
-        if stock == None and self.stock_name == None:
-            sys.stderr.write('SentimentAnalysis.analyze() Error: stock name is None')
-        elif stock == None:
-            pass
+        if type(stock_name) != str:
+            sys.stderr.write('SentimentAnalysis.analyze(stock_name) Error: stock_name should be str')
+            sys.exit(1)
         else:
-            self.stock_name = stock
-            
+            self.stock_name = stock_name
+        
+        # If n = self.num_of_articles, ensure n % 5 == 0 and n >= 5 and n <= 100
+
+        n = self.num_of_articles
+
+        while n % 5 != 0:
+            n += 1
+        if n > 100:
+            n = 100
+        elif n < 5:
+            n = 5
+        
+        self.num_of_articles = n
+
         print('Getting keywords for article search...')
         start = time.time()
         self._get_keywords()
@@ -249,10 +241,46 @@ class SentimentAnalysis:
         start = time.time()
         analysis = self._analyze()
         end = time.time()
-        print(f'Finished analyzing sources ({end - start:.2f} s)\n\n')
+        print(f'Finished analyzing sources ({end - start:.2f} s)')
+
+        print('Sentiment Analysis Completed.\n')
+
+        self._reset()
 
         analysis_dict = json.loads(analysis)
         return analysis_dict
+    
+    # Getters
+    
+    def get_num_of_articles(self):
+        return self.num_of_articles
+    
+    def get_openai_key(self):
+        return self.openai_key
+    
+    def get_newsapi_key(self):
+        return self.newsapi_key
+    
+    # Setters
+
+    def set_num_of_articles(self, num:int):
+        if type(num) != int:
+            print('Error: SentimentAnalysis.set_num_of_articles() requires int. Ignoring call')
+        else:
+            self.num_of_articles = num
+    
+    def set_openai_key(self, key:str):
+        if type(key) != str:
+            print('Error: SentimentAnalysis.set_openai_key() requires str. Ignoring call')
+        else:
+            self.openai_key = key
+
+    def set_newsapi_key(self, key:str):
+        if type(key) != str:
+            print('Error: SentimentAnalysis.set_newsapi_key() requires str. Ignoring call')
+        else:
+            self.newsapi_key = key
+
 
 if __name__ == '__main__':
     pass
