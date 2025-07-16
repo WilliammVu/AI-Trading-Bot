@@ -38,23 +38,79 @@ class SentimentAnalysis:
         self.openai_key:str = openai_key
         self.newsapi_key:str = newsapi_key
 
+    def analyze(self, stock_name) -> dict[str,str]:
+        # Returns a [str,str] dict with the following keys:
+        # 'analysis', 'sentiment', 'rating'
+        # read self._analyze() for more info
+
+        if type(stock_name) != str:
+            sys.stderr.write('SentimentAnalysis.analyze(stock_name) Error: stock_name should be str')
+            sys.exit(1)
+        else:
+            self.stock_name = stock_name
+        
+        # If n = self.num_of_articles, ensure n % 5 == 0 and n >= 5 and n <= 100
+
+        n = self.num_of_articles
+
+        while n % 5 != 0:
+            n += 1
+        if n > 100:
+            n = 100
+        elif n < 5:
+            n = 5
+        
+        self.num_of_articles = n
+
+        print('Getting keywords for article search...')
+        start = time.time()
+        self._get_keywords()
+        end = time.time()
+        print(f'Finished getting keywords ({end - start:.2f} s)')
+
+        print('Getting sources...')
+        start = time.time()
+        self._get_sources()
+        end = time.time()
+        print(f'Finished getting sources ({end - start:.2f} s)')
+
+        print('Condensing sources...')
+        print('This process may take a while')
+        start = time.time()
+        self._condense_text()
+        end = time.time()
+        print(f'Finished condensing sources ({end - start:.2f} s)')
+
+        print('Analyzing sources...')
+        start = time.time()
+        analysis = self._analyze()
+        end = time.time()
+        print(f'Finished analyzing sources ({end - start:.2f} s)')
+
+        print('Sentiment Analysis Completed.\n')
+
+        self._reset()
+
+        analysis_dict = json.loads(analysis)
+        return analysis_dict
+
     def _get_keywords(self):
         # Use OpenAI to get keywords that will be used in _get_sources
 
         try:
             client = OpenAI(api_key = self.openai_key)
 
-            prompt = f"""You will receive a <company word>. 
-            You must convert that word into a valid json string with the following fields: name, long_name, ticker_symbol.
+            prompt = f"""You will receive a <ticker symbol>. 
+            You must convert that <ticker symbol> into a valid json string with the following fields: name, long_name, ticker_symbol.
 
             The following are examples to guide your operations:
-            Ex. 1: <company word> = Tesla -> name:Tesla, long_name: Tesla Inc, ticker_symbol:TSLA
-            Ex. 2: <company word> = TSLA -> name:Tesla, long_name: Tesla Inc, ticker_symbol:TSLA
-            Ex. 3: <company word> = NVIDIA -> name:NVIDIA, long_name:NVIDIA Corp, ticker_symbol:NVDA
+            Ex. 1: <ticker symbol> = Tesla -> name:Tesla, long_name: Tesla Inc, ticker_symbol:TSLA
+            Ex. 2: <ticker symbol> = TSLA -> name:Tesla, long_name: Tesla Inc, ticker_symbol:TSLA
+            Ex. 3: <ticker symbol> = NVIDIA -> name:NVIDIA, long_name:NVIDIA Corp, ticker_symbol:NVDA
 
             If you do not know the answer to any of these fields, leave them as NONE. for example: long_name:NONE
 
-            The <company word> is: {self.stock_name}. Please output valid JSON based on the above directions.
+            The <ticker symbol> is: {self.stock_name}. Please output valid JSON based on the above directions.
 
             """
 
@@ -157,7 +213,7 @@ class SentimentAnalysis:
 
     def _analyze(self) -> str:
         prompt = f"""The following is a collection of {self.num_of_articles} summaries of recent articles regarding {self.stock_name}.
-        Note that some of the articles might be irrelevant.
+        Note that some of the articles might be irrelevant to {self.stock_name}.
         Note that today's date is {datetime.date.today()}, so articles closest to this date are the most important to consider.
         Based on the articles, output the following valid JSON with fields: analysis, sentiment, rating.
         The analysis JSON field should be a one-paragraph summary of the key ideas of all the articles.
@@ -193,62 +249,6 @@ class SentimentAnalysis:
         stock_name = None
         self.keywords = []
         self.articles = []
-    
-    def analyze(self, stock_name) -> dict[str,str]:
-        # Returns a [str,str] dict with the following keys:
-        # 'analysis', 'sentiment', 'rating'
-        # read self._analyze() for more info
-
-        if type(stock_name) != str:
-            sys.stderr.write('SentimentAnalysis.analyze(stock_name) Error: stock_name should be str')
-            sys.exit(1)
-        else:
-            self.stock_name = stock_name
-        
-        # If n = self.num_of_articles, ensure n % 5 == 0 and n >= 5 and n <= 100
-
-        n = self.num_of_articles
-
-        while n % 5 != 0:
-            n += 1
-        if n > 100:
-            n = 100
-        elif n < 5:
-            n = 5
-        
-        self.num_of_articles = n
-
-        print('Getting keywords for article search...')
-        start = time.time()
-        self._get_keywords()
-        end = time.time()
-        print(f'Finished getting keywords ({end - start:.2f} s)')
-
-        print('Getting sources...')
-        start = time.time()
-        self._get_sources()
-        end = time.time()
-        print(f'Finished getting sources ({end - start:.2f} s)')
-
-        print('Condensing sources...')
-        print('This process may take a while')
-        start = time.time()
-        self._condense_text()
-        end = time.time()
-        print(f'Finished condensing sources ({end - start:.2f} s)')
-
-        print('Analyzing sources...')
-        start = time.time()
-        analysis = self._analyze()
-        end = time.time()
-        print(f'Finished analyzing sources ({end - start:.2f} s)')
-
-        print('Sentiment Analysis Completed.\n')
-
-        self._reset()
-
-        analysis_dict = json.loads(analysis)
-        return analysis_dict
     
     # Getters
     
