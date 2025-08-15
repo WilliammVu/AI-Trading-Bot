@@ -66,7 +66,7 @@ class CandidateSelector:
     def _initialize_tickers(self):
         self.data.tickers = [
         # Mega‑caps / FAANG+
-        "NVDA",  #NVIDIA
+        "NVDA",  # NVIDIA
         "AAPL",  # Apple
         "MSFT",  # Microsoft
         "GOOGL", # Alphabet Class A
@@ -195,7 +195,7 @@ class CandidateSelector:
 
         temp = self._rank_elements(self.data.market_caps)
         for j in range(n):
-            self.data.scores[j] += temp[j]
+            self.data.scores[j] += temp[j] * 1.5
 
         temp = self._rank_elements(self.data.cum_dividend_payouts)
         for j in range(n):
@@ -203,7 +203,7 @@ class CandidateSelector:
             
         temp = self._rank_elements(self.data.volumes)
         for j in range(n):
-            self.data.scores[j] += temp[j]
+            self.data.scores[j] += temp[j] * 3.0 # Liquidity is the most important
         
     def _rank_elements(self, array):
         # O(N log(N))
